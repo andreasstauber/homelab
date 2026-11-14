@@ -1,0 +1,6 @@
+# Secrets nur auf dem Pi (CLAUDE.md §5) – im Repo nur .env.example
+.env
+*.env
+!.env.example
+*.bak-*
+.DS_Store

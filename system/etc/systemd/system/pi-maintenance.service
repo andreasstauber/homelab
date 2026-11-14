@@ -1,0 +1,16 @@
+# Quelle: homelab/system/etc/systemd/system/pi-maintenance.service
+[Unit]
+Description=Wöchentliche Raspberry-Pi-Wartung
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pi-maintenance
+# Großzügiges Zeitlimit. Bei Stop/Timeout wird nur das Skript beendet,
+# nicht ein laufendes apt/dpkg – sonst entsteht "dpkg was interrupted".
+TimeoutStartSec=3h
+KillMode=process
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

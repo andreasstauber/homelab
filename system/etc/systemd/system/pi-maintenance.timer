@@ -1,0 +1,11 @@
+# Quelle: homelab/system/etc/systemd/system/pi-maintenance.timer
+[Unit]
+Description=Wöchentliche Raspberry-Pi-Wartung (Samstag 04:00)
+
+[Timer]
+OnCalendar=Sat *-*-* 04:00:00
+# Lauf nachholen, falls der Pi zum Zeitpunkt aus war
+Persistent=true
+
+[Install]
+WantedBy=timers.target
