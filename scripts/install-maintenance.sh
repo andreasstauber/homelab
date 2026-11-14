@@ -27,8 +27,8 @@ install_file() {
     echo "Installiert: $dst"
 }
 
-if grep -q '<empfaenger@example.com>\|<benutzername>' "$repo/system/etc/pi-maintenance.conf"; then
-    echo "WARNUNG: system/etc/pi-maintenance.conf enthält noch Platzhalter (TODO)." >&2
+if ! command -v msmtp >/dev/null 2>&1 && [ ! -x /usr/sbin/sendmail ]; then
+    echo "WARNUNG: weder msmtp noch sendmail gefunden – MAIL_COMMAND in system/etc/pi-maintenance.conf setzen." >&2
 fi
 
 install_file 0755 "$repo/scripts/pi-maintenance.sh"                          /usr/local/sbin/pi-maintenance
@@ -39,4 +39,5 @@ install_file 0644 "$repo/system/etc/systemd/system/pi-maintenance.timer"     /et
 systemctl daemon-reload
 echo
 echo "Fertig. Testlauf ohne Änderungen:  sudo pi-maintenance --dry-run --no-mail"
+echo "Testlauf inkl. Testmail:           sudo pi-maintenance --dry-run"
 echo "Timer-Status:                      systemctl list-timers pi-maintenance.timer"

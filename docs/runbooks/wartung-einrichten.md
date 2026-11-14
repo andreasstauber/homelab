@@ -20,13 +20,19 @@ ssh pi "ls -la /etc/cron.d /etc/cron.weekly"
 ```
 
 Gefundene Unit/Skript-Dateien nach `system/` kopieren (`scp pi:/etc/… system/…`)
-und committen. Daraus übernehmen: wie die Mail verschickt wird (msmtp, sendmail,
-mail …) -> `MAIL_COMMAND` in `system/etc/pi-maintenance.conf`.
+und committen.
 
-## 2. Konfiguration im Repo vervollständigen
+## 2. Mailversand prüfen
 
-`system/etc/pi-maintenance.conf`: alle `TODO` (MAIL_TO, MAIL_COMMAND,
-REPO_SERVICES_DIR). Commit `wartung: Konfiguration vervollständigt`, Push.
+Die Konfiguration übernimmt Absender und Empfänger der bisherigen Mail.
+Den Versand erkennt das Skript selbst (`MAIL_COMMAND="auto"`: msmtp, sonst
+sendmail). Nur wenn die alte Routine anders verschickt (z. B. ein eigenes
+msmtp-Konto `msmtp -a <konto>` oder Python/curl), `MAIL_COMMAND` in
+`system/etc/pi-maintenance.conf` entsprechend setzen. Prüfen:
+
+```bash
+ssh pi "grep -nE 'msmtp|sendmail|mail |smtp' <altes-skript>"
+```
 
 ## 3. Deploy (Nutzer führt sudo-Befehle selbst aus)
 
@@ -34,8 +40,9 @@ REPO_SERVICES_DIR). Commit `wartung: Konfiguration vervollständigt`, Push.
 ssh pi "cd ~/homelab && git pull --ff-only"
 # auf dem Pi:
 sudo ~/homelab/scripts/install-maintenance.sh
-sudo pi-maintenance --dry-run --no-mail
-sudo pi-maintenance                     # echter Lauf mit Mail
+sudo pi-maintenance --dry-run --no-mail   # Prüfungen, keine Mail
+sudo pi-maintenance --dry-run             # Testmail "… (DRY-RUN): stauberpi"
+sudo pi-maintenance                       # echter Lauf mit Mail
 ```
 
 ## 4. Umschalten (nach OK)

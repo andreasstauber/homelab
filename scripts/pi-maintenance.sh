@@ -20,7 +20,7 @@
 # =============================================================================
 set -uo pipefail
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 CONFIG_FILE="${PI_MAINT_CONFIG:-/etc/pi-maintenance.conf}"
 DRY_RUN=0
 NO_MAIL=0
@@ -50,7 +50,7 @@ done
 # --- Standardwerte (Konfigurationsdatei überschreibt sie) ---------------------
 MAIL_TO=""
 MAIL_FROM=""
-MAIL_COMMAND="/usr/sbin/sendmail -t"
+MAIL_COMMAND="auto"
 LOG_DIR="/var/log/pi-maintenance"
 LOG_KEEP_DAYS=90
 MIN_FREE_MB=2048
@@ -220,7 +220,8 @@ step_dpkg_repair() {
     [ -n "$audit" ] && log "$audit"
     log "dpkg wurde unterbrochen – Reparatur wird versucht."
     if (( DRY_RUN )); then
-        record WARNUNG "Paketsystem" "unterbrochene Installation gefunden (Dry-Run: keine Reparatur)"
+        record WARNUNG "Paketsystem" "unterbrochene Installation gefunden – echter Lauf repariert sie (Dry-Run: keine Reparatur)"
+        DPKG_DRY_RUN_SKIP=1
         return 1
     fi
     if run env DEBIAN_FRONTEND=noninteractive dpkg --force-confdef --force-confold --configure -a \
@@ -331,7 +332,8 @@ step_container_updates() {
             '{{.Name}}|{{.Config.Image}}|{{.Image}}|{{index .Config.Labels "com.docker.compose.project.config_files"}}|{{index .Config.Labels "com.docker.compose.project"}}' "$id")
         cname=${cname#/}
 
-        if [ -n "$REPO_SERVICES_DIR" ] && [[ $cfg == "$REPO_SERVICES_DIR"/* ]]; then
+        if [[ -n "$REPO_SERVICES_DIR" && $cfg == "$REPO_SERVICES_DIR"/* ]] \
+            || [[ -z "$REPO_SERVICES_DIR" && $cfg == */homelab/services/* ]]; then
             origin="Repo-Service"
         elif [[ $cfg == /data/compose/* ]]; then
             origin="Portainer-Stack '$project'"
@@ -475,13 +477,29 @@ summary() {
     printf '\n%s\n' "$REBOOT_LINE"
 }
 
+# "auto": msmtp (typisch für Gmail) bevorzugen, sonst sendmail.
+resolve_mail_command() {
+    if [ -n "$MAIL_COMMAND" ] && [ "$MAIL_COMMAND" != "auto" ]; then
+        printf '%s' "$MAIL_COMMAND"
+    elif command -v msmtp >/dev/null 2>&1; then
+        printf '%s' "msmtp -t"
+    elif [ -x /usr/sbin/sendmail ]; then
+        printf '%s' "/usr/sbin/sendmail -t"
+    fi
+}
+
 send_mail() {
     (( NO_MAIL )) && return 0
     if [ -z "$MAIL_TO" ]; then
         echo "MAIL_TO nicht gesetzt – keine Mail verschickt." >&2
         return 0
     fi
-    local subject dry=""
+    local cmd subject dry=""
+    cmd=$(resolve_mail_command)
+    if [ -z "$cmd" ]; then
+        echo "Kein Mailprogramm gefunden (msmtp/sendmail) – keine Mail verschickt." >&2
+        return 1
+    fi
     (( DRY_RUN )) && dry=" (DRY-RUN)"
     subject="Raspberry Pi Wartung ${STATUS_TEXT[$OVERALL]}${dry}: $HOST"
     {
@@ -492,7 +510,7 @@ send_mail() {
         summary
         printf '\n\n---------------- Vollständiges Protokoll ----------------\n'
         cat "$LOG_FILE"
-    } | $MAIL_COMMAND || echo "Mailversand mit '$MAIL_COMMAND' fehlgeschlagen." >&2
+    } | $cmd || { echo "Mailversand mit '$cmd' fehlgeschlagen." >&2; return 1; }
 }
 
 # =============================================================================
@@ -507,8 +525,11 @@ printf '========================================\n'
 
 step_health
 
+DPKG_DRY_RUN_SKIP=0
 if wait_for_package_managers && step_dpkg_repair; then
     step_apt
+elif (( DPKG_DRY_RUN_SKIP )); then
+    record WARNUNG "Debian-Pakete" "Dry-Run: übersprungen bis zur dpkg-Reparatur"
 else
     record FEHLER "Debian-Pakete" "übersprungen, weil das Paketsystem nicht bereit ist"
 fi
@@ -531,7 +552,9 @@ summary
 # Protokoll abschließen, dann Mail senden
 exec 1>&3 2>&4
 wait "$TEE_PID" 2>/dev/null
-send_mail
+# Fehlgeschlagener Mailversand -> Exitcode 1, damit er in
+# "systemctl --failed" und im nächsten Gesundheitscheck auffällt.
+send_mail || exit 1
 
 (( OVERALL == 2 )) && exit 1
 exit 0
